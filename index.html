@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>JumpLab — Jump Squat & Push-Up Form Analyzer</title>
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+<header>
+  <div class="logo">🏋️ Jump<span>Lab</span></div>
+  <div class="tagline">Single-camera biomechanics for jump squats, push-ups & game footage</div>
+</header>
+
+<nav class="tabs">
+  <button class="tab active" data-tab="jump">🦵 Jump Squat</button>
+  <button class="tab" data-tab="sport">🏀 Game Footage</button>
+  <button class="tab" data-tab="pushup">💪 Push-Up Form</button>
+  <button class="tab" data-tab="guide">📘 Technique Guide</button>
+</nav>
+
+<main>
+  <!-- ============ SETTINGS ============ -->
+  <section class="panel settings">
+    <h2>Athlete Profile</h2>
+    <div class="grid2">
+      <label>Body weight (kg)
+        <input type="number" id="bodyweight" value="75" min="25" max="250" step="0.5">
+      </label>
+      <label>External load on jump (kg)<br><small>barbell / dumbbells — 0 for bodyweight</small>
+        <input type="number" id="load" value="0" min="0" max="300" step="2.5">
+      </label>
+      <label>Athletic level
+        <select id="level">
+          <option value="beginner">Beginner / new to training</option>
+          <option value="recreational" selected>Recreational (gym-goer, runner, pickup sports)</option>
+          <option value="advanced">Advanced (competitive / years of plyometrics)</option>
+          <option value="elite">Elite (college+ / pro athlete)</option>
+        </select>
+      </label>
+      <label>Your height (cm) <small>— used for camera calibration</small>
+        <input type="number" id="athleteHeight" value="175" min="100" max="230">
+      </label>
+      <label>Sport focus <small>(game footage & feedback flavor)</small>
+        <select id="sport">
+          <option value="general">General fitness / gym</option>
+          <option value="basketball">Basketball</option>
+          <option value="volleyball">Volleyball</option>
+          <option value="soccer">Soccer</option>
+          <option value="running">Running</option>
+          <option value="weightlifting">Weightlifting / powerlifting</option>
+        </select>
+      </label>
+      <label>Camera view
+        <select id="view">
+          <option value="side" selected>Side view (best angles)</option>
+          <option value="front">Front / behind view</option>
+        </select>
+      </label>
+    </div>
+    <p class="note">📷 Film from the <b>side</b>, camera level with the athlete, whole body in frame, steady camera. For game footage, pick clips where the player is large in frame and the camera is steady.</p>
+  </section>
+
+  <!-- ============ CAPTURE ============ -->
+  <section class="panel capture">
+    <h2 id="captureTitle">Video Input</h2>
+    <div class="capture-row">
+      <input type="file" id="fileInput" accept="video/*">
+      <button id="camBtn" class="btn ghost">⏺ Use webcam / phone cam</button>
+      <button id="recBtn" class="btn danger hidden">⏹ Stop recording</button>
+    </div>
+    <div id="videoWrap">
+      <video id="srcVideo" class="hidden" controls muted playsinline></video>
+      <canvas id="overlay" class="hidden"></canvas>
+    </div>
+    <div id="camWrap" class="hidden"><video id="camVideo" autoplay muted playsinline></video></div>
+    <div id="progressWrap" class="hidden">
+      <div id="progressBar"></div>
+      <div id="progressText">Loading pose model…</div>
+    </div>
+    <div class="run-row">
+      <button id="analyzeBtn" class="btn primary" disabled>▶ Analyze</button>
+      <label class="fps">Sample rate
+        <select id="fpsSel">
+          <option value="15">15 fps (fast, long clips)</option>
+          <option value="24" selected>24 fps (balanced)</option>
+          <option value="30">30 fps (precise, short clips)</option>
+        </select>
+      </label>
+    </div>
+    <p id="statusMsg" class="note"></p>
+  </section>
+
+  <!-- ============ RESULTS ============ -->
+  <section id="results" class="hidden">
+    <div class="panel score-panel">
+      <div class="score-big" id="scoreBig">–</div>
+      <div class="score-side">
+        <div id="gradeLabel" class="grade"></div>
+        <div id="scoreSummary" class="summary"></div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h3>Sub-scores</h3>
+      <div id="subscores"></div>
+    </div>
+
+    <div class="panel">
+      <h3>Perspective — where this puts you</h3>
+      <div id="perspective"></div>
+    </div>
+
+    <div class="panel">
+      <h3>Measured metrics</h3>
+      <div id="metrics" class="metric-grid"></div>
+    </div>
+
+    <div class="panel">
+      <h3>Coaching feedback</h3>
+      <div id="feedback"></div>
+    </div>
+
+    <div class="panel">
+      <button id="exportBtn" class="btn ghost">⬇ Export report (.txt)</button>
+    </div>
+  </section>
+
+  <!-- ============ TECHNIQUE GUIDE ============ -->
+  <section id="guidePanel" class="panel hidden">
+    <h2>✅ Correct Push-Up Form (checklist)</h2>
+    <ol class="guide">
+      <li><b>Hand position:</b> hands slightly wider than shoulders, under (or a few cm below) the shoulder line, fingers spread, middle fingers pointing forward or slightly out.</li>
+      <li><b>Body line:</b> one straight line ear → shoulder → hip → ankle. Squeeze glutes, brace the abs like you're about to be punched. No hip sag, no piked hips.</li>
+      <li><b>Elbows:</b> tuck ~20–45° toward the body (arrow shape), not flared to a T. Forearms stay vertical.</li>
+      <li><b>Depth:</b> lower until elbows pass 90° — chest about a fist's height off the floor. Full range beats half reps every time.</li>
+      <li><b>Head/neck:</b> look at the floor ~30 cm ahead of you; spine neutral, don't tuck the chin or crane the neck.</li>
+      <li><b>Feet:</b> together or up to hip-width. Wider = easier, narrower = more core demand.</li>
+      <li><b>Tempo:</b> ~1.5–2 s down, brief pause, drive up explosively. Don't let gravity do the descent.</li>
+      <li><b>Breathing:</b> inhale down, exhale up.</li>
+    </ol>
+    <p class="note">Too hard? Elevate hands on a bench. Too easy? Elevate feet, add a pause at the bottom, or wear a weighted vest.</p>
+
+    <h2>✅ Correct Jump Squat Form</h2>
+    <ol class="guide">
+      <li><b>Stance:</b> feet roughly shoulder-width, toes 5–15° out — the same stance you'd back-squat in.</li>
+      <li><b>Descent:</b> hips and knees bend together, 2–3 s controlled down to at least parallel (ideally the depth you'd reach in a competition squat).</li>
+      <li><b>Bottom position:</b> chest up, lower back neutral, knees tracking over toes, weight across the whole foot.</li>
+      <li><b>Ascent:</b> drive the floor away — explode up as fast as possible, fully extending hips, knees and ankles (triple extension) without leaving the floor… unless jump intent: for a <i>jump</i> squat, take off with feet leaving the floor.</li>
+      <li><b>Arms:</b> swing them down and back in the descent, then whip them up past the shoulders at takeoff — arm drive adds 10%+ to jump height.</li>
+      <li><b>Head/trunk:</b> eyes forward, head in line with the spine; trunk leans forward 30–45° during the drive — that's normal and powerful.</li>
+      <li><b>Load:</b> best power output is usually 0–40% of your 1RM squat (light dumbbells 5–20 kg work great). Too much load kills jump height and slows the training effect.</li>
+      <li><b>Landings:</b> land soft on the balls of the feet, absorb through the hips, reset between reps.</li>
+    </ol>
+  </section>
+</main>
+
+<footer>
+  Estimates come from 2-D video analysis and are coaching-level approximations, not lab-grade force-plate data.
+  Camera zoom, panning, occlusion and frame rate reduce accuracy. Not medical advice.
+</footer>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>
