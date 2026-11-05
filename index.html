@@ -24,11 +24,11 @@
   <section class="panel settings">
     <h2>Athlete Profile</h2>
     <div class="grid2">
-      <label>Body weight (kg)
-        <input type="number" id="bodyweight" value="75" min="25" max="250" step="0.5">
+      <label>Body weight (lb)
+        <input type="number" id="bodyweightLb" value="165" min="55" max="500" step="1">
       </label>
-      <label>External load on jump (kg)<br><small>barbell / dumbbells — 0 for bodyweight</small>
-        <input type="number" id="load" value="0" min="0" max="300" step="2.5">
+      <label>External load on jump (lb)<br><small>barbell / dumbbells — 0 for bodyweight</small>
+        <input type="number" id="loadLb" value="0" min="0" max="600" step="5">
       </label>
       <label>Athletic level
         <select id="level">
@@ -38,8 +38,12 @@
           <option value="elite">Elite (college+ / pro athlete)</option>
         </select>
       </label>
-      <label>Your height (cm) <small>— used for camera calibration</small>
-        <input type="number" id="athleteHeight" value="175" min="100" max="230">
+      <label>Your height <small>— used for camera calibration</small>
+        <span class="imperial">
+          <select id="heightFt"></select> <span class="unit">ft</span>
+          <select id="heightIn"></select> <span class="unit">in</span>
+          <span id="heightCmEcho" class="echo"></span>
+        </span>
       </label>
       <label>Sport focus <small>(game footage & feedback flavor)</small>
         <select id="sport">
@@ -73,7 +77,10 @@
       <video id="srcVideo" class="hidden" controls muted playsinline></video>
       <canvas id="overlay" class="hidden"></canvas>
     </div>
-    <div id="camWrap" class="hidden"><video id="camVideo" autoplay muted playsinline></video></div>
+    <div id="camWrap" class="hidden">
+      <video id="camVideo" autoplay muted playsinline></video>
+      <p id="camFpsInfo" class="note hidden"></p>
+    </div>
     <div id="progressWrap" class="hidden">
       <div id="progressBar"></div>
       <div id="progressText">Loading pose model…</div>
@@ -83,11 +90,30 @@
       <label class="fps">Sample rate
         <select id="fpsSel">
           <option value="15">15 fps (fast, long clips)</option>
-          <option value="24" selected>24 fps (balanced)</option>
-          <option value="30">30 fps (precise, short clips)</option>
+          <option value="24">24 fps (balanced)</option>
+          <option value="30">30 fps</option>
+          <option value="60">60 fps (high detail)</option>
+          <option value="120" selected>120 fps (max detail)</option>
+          <option value="240">240 fps (slow-mo clips)</option>
         </select>
       </label>
+      <span id="fpsInfo" class="fpsinfo"></span>
     </div>
+    <div class="run-row">
+      <label class="fps">Clip speed
+        <select id="clipSpeed">
+          <option value="1" selected>Real time (1×)</option>
+          <option value="0.5">Slow-mo played at ½ speed (240 fps shot, 120 fps file)</option>
+          <option value="0.25">Slow-mo played at ¼ speed (120 fps shot, 30 fps file)</option>
+        </select>
+      </label>
+      <span class="fpsinfo">Slow-motion files are already time-stretched — tell the app, or flight time (and jump height) is measured in the wrong seconds.</span>
+    </div>
+    <div class="run-row">
+      <label class="fps"><input type="checkbox" id="trimChk" class="chk"> ✂ Auto-trim dead time</label>
+      <span class="fpsinfo">Scans the whole clip first at a low rate, finds takeoff (or the push-up reps) and analyzes only that window — plus ~1.2 s of standing before it and 0.6 s after, which is what the floor line, the standing baseline and the start of the countermovement are calibrated from. Playback loops the trimmed window.</span>
+    </div>
+    <p class="note">⏱ The app reads your file's <b>real</b> frame rate and caps sampling at it — a clip shot at 30 fps only contains 30 frames per second, so 120 fps can't invent detail the camera never recorded. For genuine 120 fps detail, shoot in your phone's <b>slow-motion (120 fps)</b> mode; the readout above will confirm what it found.</p>
     <p id="statusMsg" class="note"></p>
   </section>
 
@@ -128,6 +154,64 @@
 
   <!-- ============ TECHNIQUE GUIDE ============ -->
   <section id="guidePanel" class="panel hidden">
+    <h2>🔬 How the analysis works — and where the numbers come from</h2>
+    <div class="how">
+      <p><b>1. Pose estimation (the only "AI" part).</b> Every sampled video frame is passed through
+      <b>MediaPipe Pose Landmarker</b> (<code>pose_landmarker_full</code>, ~10 MB), a neural network that runs
+      <b>on your own device</b> via WebAssembly + WebGL. It returns 33 named body landmarks per frame — nose,
+      shoulders, elbows, wrists, hips, knees, ankles, heels, toes — as normalized 2-D coordinates plus a
+      visibility confidence. Nothing is uploaded anywhere; the only network request this app ever makes is the
+      one-time download of the model and its WASM runtime from a public CDN.</p>
+
+      <p><b>2. Pixels → metres (calibration).</b> Landmarks are only pixels, so the app converts them to real
+      distances using <i>your</i> height: it measures the pixel span from ankle to shoulder to nose and divides it
+      by the height you entered. That gives a <b>pixels-per-metre</b> scale for the clip. Everything metric
+      (jump height, crouch depth, stance width, hip sag) is a pixel distance divided by this scale — which is why
+      an honest height entry matters more than anything else in the profile.</p>
+
+      <p><b>3. Angles and lines from landmark triples.</b> Joint angles are plain dot-product geometry: e.g.
+      knee angle at the bottom of the dip is the ankle–knee–hip triple, trunk lean is the tilt of the
+      shoulder-midpoint-to-hip-midpoint line off vertical, plank quality is the perpendicular distance of the hip
+      from the shoulder-to-ankle line. No lookup tables, no "form database."</p>
+
+      <p><b>4. Physics from the timeline.</b> The app builds time series (hip height, foot height, elbow angle),
+      median-smooths them, and finds events: crouch = deepest hip before the jump, takeoff/landing = the moments
+      the feet leave and re-cross the estimated floor line (found from your standing ankle height).
+      <b>Jump height comes from flight time</b> using projectile motion, <code>h = g·t²/8</code> — this is the same
+      flight-time principle a Vertec or contact-mat uses, and it is independent of pixels-per-metre, which makes it
+      the most trustworthy number here. Takeoff velocity is <code>v₀ = g·t/2</code>, and mean power is
+      <code>P = m·g·v₀</code> using your bodyweight <i>plus</i> the load you entered. Push-up reps are counted by
+      cycling the elbow angle through &lt;110° (bottom) and &gt;150° (top).</p>
+
+      <p><b>5. Sub-frame timing.</b> Takeoff and landing are <i>interpolated between</i> frames rather than snapped
+      to them, so flight time is resolved to roughly a few milliseconds even on a 30 fps clip. Frame rate still
+      matters, though: at 30 fps a 300 ms flight is only ~9 samples, so high-frame-rate (slow-mo) video genuinely
+      improves the read.</p>
+
+      <p><b>6. Scores and feedback.</b> The sub-scores and coaching text are <b>hand-written rule thresholds from
+      standard coaching practice</b> (e.g. 90–110° knee at the bottom of a countermovement, 170–180° for a rigid
+      plank, 30–45° trunk lean during the drive), weighted into the 0–100 composite. The "where this puts you"
+      tiers are <b>published literature / combine-style ranges</b> hardcoded in <code>SPORT_BENCH</code> — e.g.
+      elite volleyball and basketball verticals ~80–90 cm, general population ~25–35 cm. They are population
+      reference ranges, <b>not</b> your personal baseline and not a validated normative database.</p>
+
+      <p><b>5b. Auto-trim (✂).</b> Long clips are mostly standing around, which wastes the pose
+      budget on nothing. The app first scans the whole file at 12 fps, locates the rep — feet-off-floor
+      runs for jumps, elbow minima for push-ups, joint motion energy as a fallback — and then analyzes
+      only that window, plus 1.2 s of standing before it and 0.6 s after (those frames are what the
+      floor line and standing baseline are calibrated from, so they are not dead time). The exact window
+      used is shown in the results and the export, and playback loops just that window. With several
+      attempts in one clip it keeps the highest flight only; with no clear activity contrast it trims
+      nothing rather than guessing.</p>
+
+      <p class="note">⚠️ <b>Honest limitations.</b> This is single-camera 2-D estimation, so it cannot see
+      front-to-depth motion: toe-out angle, elbow flare and true bar/hip path are all guesses from one viewpoint,
+      and the near leg reads higher than the far leg (that is why leg symmetry is reported with a caveat). Lens
+      distortion, cropping, motion blur, camera pan/zoom and occlusion by other players all bias the numbers.
+      Flight-time height on a 120 fps clip is coaching-grade and repeatable; force-plate velocity and true joint
+      moments require a lab. Use the <i>trend across sessions</i>, not any single absolute value. No medical advice.</p>
+    </div>
+
     <h2>✅ Correct Push-Up Form (checklist)</h2>
     <ol class="guide">
       <li><b>Hand position:</b> hands slightly wider than shoulders, under (or a few cm below) the shoulder line, fingers spread, middle fingers pointing forward or slightly out.</li>
@@ -149,7 +233,7 @@
       <li><b>Ascent:</b> drive the floor away — explode up as fast as possible, fully extending hips, knees and ankles (triple extension) without leaving the floor… unless jump intent: for a <i>jump</i> squat, take off with feet leaving the floor.</li>
       <li><b>Arms:</b> swing them down and back in the descent, then whip them up past the shoulders at takeoff — arm drive adds 10%+ to jump height.</li>
       <li><b>Head/trunk:</b> eyes forward, head in line with the spine; trunk leans forward 30–45° during the drive — that's normal and powerful.</li>
-      <li><b>Load:</b> best power output is usually 0–40% of your 1RM squat (light dumbbells 5–20 kg work great). Too much load kills jump height and slows the training effect.</li>
+      <li><b>Load:</b> best power output is usually 0–40% of your 1RM squat (light dumbbells 10–45 lb work great). Too much load kills jump height and slows the training effect.</li>
       <li><b>Landings:</b> land soft on the balls of the feet, absorb through the hips, reset between reps.</li>
     </ol>
   </section>
